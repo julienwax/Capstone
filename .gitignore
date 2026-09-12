@@ -1,0 +1,15 @@
+owen/
+EPA/
+.vscode/
+*.pdf
+
+# Python
+__pycache__/
+*.pyc
+.ipynb_checkpoints/
+venv/
+.env
+
+# OS
+.DS_Store
+Thumbs.db
