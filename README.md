@@ -10,7 +10,7 @@ Capstone/
     │   ├── futures_generic_prices.csv         # Daily generic futures curve (Bloomberg)
     │   ├── contract_meta.csv                  # Contract expiry schedule (Bloomberg)
     │   ├── managed_money.csv                  # Weekly COT Managed Money positions (Bloomberg)
-    │   └── sg_cta_indices.csv                 # SG CTA / Trend indices (Scotia API)
+    │   └── sg_cta_indices.csv                 # SG CTA / Trend indices (SocGen API)
     ├── src/paper_replication/
     │   ├── config.py                          # Markets, momentum horizons, ReplicationConfig defaults
     │   ├── data.py                            # Loading, rolling contract, momentum features, weekly panel
@@ -56,7 +56,7 @@ Capstone/
 | `futures_generic_prices.csv` | Daily generic futures curve (`CL1`, `CO1`, ...; nearby 1-36): `PX_SETTLE`, `PX_LAST`, volume, open interest | Bloomberg | 2009-01-02 to 2026-09-01 |
 | `contract_meta.csv` | Contract metadata including last tradeable and first notice dates | Bloomberg | Contracts expiring 2008-12 to 2029-09 |
 | `managed_money.csv` | Weekly Managed Money long, short and net positions from the Commitments of Traders reports (CFTC for WTI, Heating Oil, RBOB, Natural Gas; ICE Futures Europe for Brent, Gasoil), futures-only and combined futures-and-options | Bloomberg | CFTC from 2009-01, ICE from 2011-01, to 2026-08-25 |
-| `sg_cta_indices.csv` | SG CTA / Trend index levels and returns | Scotiabank API | 2000-01 to 2026-08 |
+| `sg_cta_indices.csv` | SG CTA / Trend index levels and returns | SocGen API | 2000-01 to 2026-08 |
 
 - **Managed Money basis:** futures-only by default; the combined futures-and-options panel is kept for sensitivity analysis.
 - **Price field:** `PX_SETTLE` is the primary field. `PX_LAST` differs from it only on the final, not-yet-settled date (2026-09-01).
