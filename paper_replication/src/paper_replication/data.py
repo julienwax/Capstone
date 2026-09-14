@@ -125,10 +125,12 @@ def build_daily_features(rolling):
     for market, group in rolling.groupby("market", sort=False):
         group = group.sort_values("date").copy()
         group["pnl_vol"] = _ewm_volatility(group["daily_pnl"])
+        feature_columns = {}
         for horizon in HORIZONS:
             mom = (group["cum_pnl"] - group["cum_pnl"].rolling(horizon, min_periods=horizon).mean()) / group["pnl_vol"].replace(0, np.nan)
-            group[f"mom_{horizon}"] = mom
-            group[f"x_{horizon}"] = mom / mom.rolling(252, min_periods=252).std().replace(0, np.nan)
+            feature_columns[f"mom_{horizon}"] = mom
+            feature_columns[f"x_{horizon}"] = mom / mom.rolling(252, min_periods=252).std().replace(0, np.nan)
+        group = pd.concat([group, pd.DataFrame(feature_columns, index=group.index)], axis=1)
         frames.append(group)
     return pd.concat(frames, ignore_index=True).sort_values(["market", "date"]).reset_index(drop=True)
 
