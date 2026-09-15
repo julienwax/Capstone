@@ -115,7 +115,7 @@ Across all 84 year-by-market cells:
 
 Full tables are in `outputs/linear_regression/r2_oos_vs_paper.csv` and `directional_accuracy_vs_paper.csv`.
 
-### Neural network model (in progress)
+### Neural network model
 
 `notebooks/nn_replicate_insight_177.ipynb` runs a PyTorch implementation of the paper's main model on the same rolling contract, with two runs: the paper comparison window and the expanded history. Defaults are in `ReplicationConfig` (`config.py`):
 
@@ -127,7 +127,39 @@ Full tables are in `outputs/linear_regression/r2_oos_vs_paper.csv` and `directio
 - **Loss:** mean squared error + L1 penalty λ₁ = 0.04 on the shared weights + L2 penalty λ₂ = 0.01 on weekly changes in the bias.
 - **Training:** full-batch Adam with learning rate 0.01 on rolling 104-week windows. The first fit runs 1,024 epochs from shared weights of zero, market weights (0.4, 0.2, 0.1) and zero bias; later fits warm-start from the previous window for 36 epochs.
 
-For 2015–2025 (3,444 observations across six markets), the replication achieves **45.03% out-of-sample R²** versus **44.59%** in the paper, and **71.84% directional accuracy** versus **72.50%**. The small gaps may reflect data revisions and conventions the paper leaves unspecified, including holiday dating, rolling-window boundaries, and bias/optimizer warm starts; their individual effects have not been isolated. See the [alignment notes](paper_replication/NN_PAPER_ALIGNMENT.md).
+#### Replication results (2015–2025)
+
+Cumulative results for 574 reporting weeks per market (3,444 observations). Paper values are from the **Our Model** panels of Tables 1–2. All-market metrics pool observations rather than average market scores.
+
+| Market | R² replicated | R² paper | Accuracy replicated | Accuracy paper |
+|---|---|---|---|---|
+| ICE Brent | 49.17% | 48.34% | 73.52% | 74.04% |
+| CME WTI | 42.03% | 41.86% | 74.39% | 75.96% |
+| ICE Gasoil | 46.75% | 45.76% | 73.87% | 73.87% |
+| CME Heating Oil | 36.38% | 33.74% | 67.94% | 68.12% |
+| CME RBOB Gasoline | 27.71% | 33.99% | 68.82% | 69.69% |
+| CME Natural Gas | 44.21% | 43.69% | 72.47% | 73.34% |
+| **ALL Markets** | **45.03%** | **44.59%** | **71.84%** | **72.50%** |
+
+All markets pooled, by year:
+
+| Year | R² replicated | R² paper | Accuracy replicated | Accuracy paper |
+|---|---|---|---|---|
+| 2015 | 33.02% | 30.39% | 67.63% | 70.51% |
+| 2016 | 46.97% | 51.44% | 69.87% | 72.76% |
+| 2017 | 46.16% | 49.56% | 71.79% | 73.40% |
+| 2018 | 45.02% | 40.02% | 73.90% | 75.47% |
+| 2019 | 47.72% | 45.21% | 79.49% | 79.49% |
+| 2020 | 27.03% | 26.72% | 66.35% | 66.99% |
+| 2021 | 35.84% | 40.79% | 68.91% | 68.27% |
+| 2022 | 37.94% | 28.10% | 69.87% | 68.27% |
+| 2023 | 47.21% | 47.99% | 70.51% | 71.47% |
+| 2024 | 57.09% | 54.37% | 78.62% | 78.30% |
+| 2025 | 49.75% | 49.96% | 73.08% | 72.44% |
+
+The pooled results are close, but this is not an exact numerical replication: cumulative RBOB R² is 6.28 pp lower, while annual differences include Gasoil R² at +30.69 pp in 2022 and Brent directional accuracy at −11.32 pp in 2018. Aggregation can conceal these differences across markets and years.
+
+Possible contributors include data revisions, holiday alignment, window boundaries, and implementation choices the paper does not fully specify: bias initialization, optimizer-state resets, and which fitted model supplies the prior prediction endpoint. Small changes can propagate through successive nonlinear fits; we have not isolated each contributor, so these are hypotheses rather than established causes. Full annual comparisons and charts are at the end of `notebooks/nn_replicate_insight_177.ipynb`.
 
 ### Setup and running
 

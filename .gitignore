@@ -13,6 +13,7 @@ venv/
 
 paper_replication/llm_context.md
 paper_replication/outputs
+paper_replication/spec1.ipynb
 
 # OS
 .DS_Store
@@ -20,3 +21,4 @@ Thumbs.db
 
 paper_replication/spec1.ipynb
 /paper_replication/derived/
+/paper_replication/NN_PAPER_ALIGNMENT.md
