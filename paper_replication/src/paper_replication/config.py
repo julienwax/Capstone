@@ -13,6 +13,9 @@ class ReplicationConfig:
     first_epochs: int = 1024
     rolling_epochs: int = 36
     learning_rate: float = 0.01
+    adam_beta1: float = 0.9
+    adam_beta2: float = 0.999
+    adam_epsilon: float = 1e-7
     lambda_w: float = 0.04
     lambda_bias: float = 0.01
     evaluation_start: str = "2015-01-01"

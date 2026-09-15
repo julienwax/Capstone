@@ -117,22 +117,22 @@ Full tables are in `outputs/linear_regression/r2_oos_vs_paper.csv` and `directio
 
 ### Neural network model (in progress)
 
-`notebooks/replicate_insight_177.ipynb` runs a PyTorch implementation of the paper's main model on the same rolling contract, with two runs: the paper comparison window and the expanded history. Defaults are in `ReplicationConfig` (`config.py`):
+`notebooks/nn_replicate_insight_177.ipynb` runs a PyTorch implementation of the paper's main model on the same rolling contract, with two runs: the paper comparison window and the expanded history. Defaults are in `ReplicationConfig` (`config.py`):
 
 - **Momentum inputs:** horizons of 5, 10, ..., 250 trading days. MOM = (cumulative P&L − its n-day moving average) / price volatility, then divided by its one-year rolling standard deviation.
 - **Price volatility:** exponentially weighted with decay δ = 60/61 (Moskowitz, Ooi and Pedersen, 2011), annualized.
-- **Dependent variable:** Managed Money minus its one-year rolling mean, divided by the rolling standard deviation of deviations from that mean, both lagged one week.
+- **Dependent variable:** Managed Money minus its one-year rolling mean, divided by the square root of summed historical residual squares / (N−1), both lagged one report. Windows cover 252 trading dates; residuals are not re-centered. See [NN alignment notes](paper_replication/NN_PAPER_ALIGNMENT.md).
 - **Shared layer:** 3 trend factors with reaction function R(u) = u·exp((1 − u²)/2), shared across markets.
 - **Market layer:** market-specific weights plus a time-varying bias.
 - **Loss:** mean squared error + L1 penalty λ₁ = 0.04 on the shared weights + L2 penalty λ₂ = 0.01 on weekly changes in the bias.
 - **Training:** full-batch Adam with learning rate 0.01 on rolling 104-week windows. The first fit runs 1,024 epochs from shared weights of zero, market weights (0.4, 0.2, 0.1) and zero bias; later fits warm-start from the previous window for 36 epochs.
 
-These results are not validated yet. The current saved outputs in `outputs/neural_network/` contain no valid predictions: predicted values are NaN, and the evaluation stops in November 2017.
+For 2015–2025 (3,444 observations across six markets), the replication achieves **45.03% out-of-sample R²** versus **44.59%** in the paper, and **71.84% directional accuracy** versus **72.50%**. The small gaps may reflect data revisions and conventions the paper leaves unspecified, including holiday dating, rolling-window boundaries, and bias/optimizer warm starts; their individual effects have not been isolated. See the [alignment notes](paper_replication/NN_PAPER_ALIGNMENT.md).
 
 ### Setup and running
 
 - **Requirements:** Python 3.11 or newer (developed on 3.14) with numpy, pandas, pyarrow, scipy, matplotlib and PyTorch (see `pyproject.toml`), plus Jupyter. TensorFlow and Gurobi are intentionally not required; PyTorch is the modeling library.
-- **Running:** open the notebooks from `paper_replication/notebooks/`. Each notebook adds `src/` to the import path, so no install is needed. `linear_regression.ipynb` runs in seconds; `replicate_insight_177.ipynb` refits the network every week and takes much longer.
+- **Running:** open the notebooks from `paper_replication/notebooks/`. Each notebook adds `src/` to the import path, so no install is needed. `linear_regression.ipynb` runs in seconds; `nn_replicate_insight_177.ipynb` refits the network every week and takes much longer.
 - **Torch import:** importing `paper_replication` imports torch through `__init__.py`, even for the linear regression notebook.
 
 ### Reproducibility rules

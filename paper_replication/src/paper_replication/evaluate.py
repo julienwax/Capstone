@@ -5,7 +5,7 @@ from tqdm import tqdm
 
 from .config import HORIZONS, MARKETS, ReplicationConfig
 from .data import load_inputs, build_rolling_contract, build_daily_features, build_weekly_panel
-from .model import fit_window, set_deterministic
+from .model import fit_window, set_deterministic, align_bias_state
 
 
 def _arrays(window, markets=MARKETS):
@@ -40,32 +40,24 @@ def _complete_dates(panel):
 
 
 def run_replication(config=ReplicationConfig(), expanded=False, progress=False):
-    """Run the rolling out-of-sample evaluation of the shared momentum network.
+    """Fit prior 104 complete weeks and score sigma_lag * (yhat_t - yhat_prev).
 
-    Builds the weekly panel, then walks forward one reporting week at a time. Each evaluation
-    week with all markets present (config.evaluation_start to evaluation_end, or every week if
-    `expanded`) is fit on the preceding `train_weeks` complete weeks: a long first fit at the
-    first evaluation week, then short fits warm-started from the previous window. The model then
-    predicts y for the current week, which is converted back to a position as
-        predicted_position = y_hat_t * mm_std_lag_t + mm_mean_lag_t
-    and scored on position changes:
-        actual_change    = mm_net_t - mm_net_{t-1}
-        predicted_change = predicted_position_t - predicted_position_{t-1}
-    `progress` shows a tqdm progress bar. Returns the intermediate tables, the predictions and
-    the pooled metrics.
+    Both endpoints use the current fitted model, holding the last training bias
+    fixed for the new observation. This endpoint convention is explicit because
+    the paper does not specify model vintage for the prior endpoint.
     """
     set_deterministic(config.seed)
     prices, meta, mm = load_inputs(config)
     rolling = build_rolling_contract(prices, meta)
     daily = build_daily_features(rolling)
     panel = build_weekly_panel(daily, mm)
-    panel["year"] = panel["report_week_tuesday"].dt.year
+    panel["year"] = panel["panel_date"].dt.year
     if expanded:
         evaluation_dates = sorted(panel["report_week_tuesday"].unique())
     else:
         evaluation_dates = sorted(
             panel.loc[
-                panel["report_week_tuesday"].between(
+                panel["panel_date"].between(
                     config.evaluation_start, config.evaluation_end
                 ),
                 "report_week_tuesday",
@@ -75,6 +67,7 @@ def run_replication(config=ReplicationConfig(), expanded=False, progress=False):
     dates = sorted(panel["report_week_tuesday"].unique())
     complete_dates = set(_complete_dates(panel))
     previous_state = None
+    previous_train_dates = None
     predictions = []
     date_iterator = tqdm(
         dates,
@@ -93,16 +86,20 @@ def run_replication(config=ReplicationConfig(), expanded=False, progress=False):
         if evaluation_date not in evaluation_dates or evaluation_date not in complete_dates:
             continue
         _, x_train, y_train = _arrays(train)
+        if previous_state is not None:
+            previous_state = align_bias_state(previous_state, previous_train_dates, train_dates)
         model = fit_window(x_train, y_train, config, previous_state)
+        previous_train_dates = train_dates
         previous_state = {key: value.detach().clone() for key, value in model.state_dict().items()}
         current = panel.loc[panel["report_week_tuesday"].eq(evaluation_date)]
         _, x_current, _ = _arrays(current)
         with torch.no_grad():
             # A single week does not match the training bias length, so forward() uses each market's last training bias
             current_prediction, _ = model.forward(x_current)
+            prior_prediction, _ = model.forward(x_train[-1:], bias_indices=[len(train_dates) - 1])
         prediction = (
             current.set_index("market")
-            .reindex(MARKETS)[["report_week_tuesday", "mm_net", "mm_mean_lag", "mm_std_lag"]]
+            .reindex(MARKETS)[["report_week_tuesday", "report_date", "panel_date", "mm_net", "mm_mean_lag", "mm_std_lag", "actual_change", "previous_report_week"]]
             .reset_index()
             .rename(columns={"mm_net": "actual_position"})
         )
@@ -111,12 +108,15 @@ def run_replication(config=ReplicationConfig(), expanded=False, progress=False):
         prediction["predicted_position"] = (
             prediction["predicted_y"] * prediction["mm_std_lag"] + prediction["mm_mean_lag"]
         )
-        prediction["predicted_position_change"] = np.nan
-        prediction["actual_position_change"] = np.nan
+        prediction["previous_predicted_y"] = prior_prediction.numpy()[0]
+        prediction["predicted_change"] = prediction["mm_std_lag"] * (
+            prediction["predicted_y"] - prediction["previous_predicted_y"])
+        # Never score a multi-week gap as a one-week prediction.
+        if not prediction["previous_report_week"].eq(train_dates[-1]).all():
+            raise ValueError("Previous reporting week is not the last complete training week")
         predictions.append(prediction)
     result = pd.concat(predictions, ignore_index=True) if predictions else pd.DataFrame()
     if not result.empty:
         result = result.sort_values(["market", "report_week_tuesday"])
-        result["actual_change"] = result.groupby("market")["actual_position"].diff()
-        result["predicted_change"] = result.groupby("market")["predicted_position"].diff()
+
     return {"rolling_contract": rolling, "daily_features": daily, "weekly_panel": panel, "predictions": result, "metrics": _metrics(result) if not result.empty else pd.Series(dtype=float)}

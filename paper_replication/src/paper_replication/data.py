@@ -107,11 +107,20 @@ def _ewm_volatility(values, decay=60 / 61):
     divided by the sum of weights, multiplied by 252 and square-rooted. Squares are not
     demeaned, and the average expands from the first observation.
     """
-    squared = pd.Series(values, dtype=float).shift(1).pow(2)
-    weights = decay ** np.arange(len(squared))[::-1]
-    weighted = squared.fillna(0).to_numpy() * weights
-    denom = np.where(np.isnan(squared.to_numpy()), 0.0, weights).cumsum()
-    return np.sqrt(252 * np.divide(np.cumsum(weighted), np.maximum(denom, 1e-12)))
+    # Recursive numerator/denominator avoid underflow and dependence on the
+    # length of future data (a global weight floor distorted early observations).
+    values = np.asarray(values, dtype=float)
+    result = np.zeros(len(values))
+    numerator = denominator = 0.0
+    for t in range(1, len(values)):
+        numerator *= decay
+        denominator *= decay
+        if np.isfinite(values[t - 1]):
+            numerator += values[t - 1] ** 2
+            denominator += 1.0
+        result[t] = np.sqrt(252 * numerator / denominator) if denominator else np.nan
+    return result
+
 
 
 def build_daily_features(rolling):
@@ -136,29 +145,42 @@ def build_daily_features(rolling):
 
 
 def build_weekly_panel(daily, mm):
-    """Join weekly Managed Money to momentum inputs and build the dependent variable y.
+    """Paper §2.2 / footnote 5 on each market's trading calendar.
 
-    Features are taken from the last trading day on or before each report_week_tuesday.
-    mm_mean_lag is the 52-week rolling mean of net positions, and mm_std_lag the 52-week
-    rolling std of deviations from that mean; both are lagged one week. Then
-    y = (mm_net - mm_mean_lag) / mm_std_lag (paper Section 2.2). Rows missing any
-    feature or y are dropped.
+    A year contains 252 trading dates. Residual squares are NOT demeaned.
+    Statistics are lagged to the preceding report; holidays use actual as-of dates.
+    Full windows are required, including historical means for every residual.
     """
     feature_cols = [f"x_{h}" for h in HORIZONS]
-    daily = daily.sort_values("date")
-    weekly = []
+    frames = []
     for market, group in daily.groupby("market", sort=False):
-        target_dates = mm.loc[mm["market"].eq(market), "report_week_tuesday"].sort_values().unique()
-        sampled = pd.merge_asof(
-            pd.DataFrame({"report_week_tuesday": target_dates}).sort_values("report_week_tuesday"),
-            group[["date"] + feature_cols].rename(columns={"date": "feature_date"}).sort_values("feature_date"),
-            left_on="report_week_tuesday", right_on="feature_date", direction="backward")
-        sampled["market"] = market
-        weekly.append(sampled)
-    features = pd.concat(weekly, ignore_index=True)
-    panel = mm.merge(features, on=["market", "report_week_tuesday"], how="inner")
-    panel = panel.sort_values(["market", "report_week_tuesday"])
-    panel["mm_mean_lag"] = panel.groupby("market")["mm_net"].transform(lambda s: s.rolling(52, min_periods=52).mean().shift(1))
-    panel["mm_std_lag"] = panel.groupby("market").apply(lambda g: (g["mm_net"] - g["mm_net"].rolling(52, min_periods=52).mean()).rolling(52, min_periods=52).std().shift(1), include_groups=False).reset_index(level=0, drop=True)
-    panel["y"] = (panel["mm_net"] - panel["mm_mean_lag"]) / panel["mm_std_lag"].replace(0, np.nan)
+        group = group.sort_values("date")
+        w = mm.loc[mm["market"].eq(market)].sort_values("report_date").copy()
+        w = pd.merge_asof(w, group[["date"] + feature_cols].rename(
+            columns={"date": "feature_date"}), left_on="report_date",
+            right_on="feature_date", direction="backward")
+        dates = group["date"].to_numpy()
+        indices = np.searchsorted(dates, w["report_date"].to_numpy(), side="right") - 1
+        values = w["mm_net"].to_numpy(float)
+        means = np.full(len(w), np.nan)
+        sigma = np.full(len(w), np.nan)
+        for i, day in enumerate(indices):
+            if day < 251:
+                continue
+            left = np.searchsorted(indices, day - 251, side="left")
+            # Require position history covering the entire trading-year window.
+            if indices[0] > day - 251:
+                continue
+            means[i] = values[left:i + 1].mean()
+            residuals = values[left:i + 1] - means[left:i + 1]
+            if len(residuals) > 1 and np.isfinite(residuals).all():
+                sigma[i] = np.sqrt(np.sum(residuals ** 2) / (len(residuals) - 1))
+        w["mm_mean_lag"] = pd.Series(means).shift(1).to_numpy()
+        w["mm_std_lag"] = pd.Series(sigma).shift(1).to_numpy()
+        w["actual_change"] = w["mm_net"].diff()
+        w["previous_report_week"] = w["report_week_tuesday"].shift(1)
+        w["y"] = (w["mm_net"] - w["mm_mean_lag"]) / w["mm_std_lag"].replace(0, np.nan)
+        frames.append(w)
+    panel = pd.concat(frames, ignore_index=True)
+    panel["panel_date"] = panel.groupby("report_week_tuesday")["report_date"].transform("min")
     return panel.dropna(subset=feature_cols + ["y"]).reset_index(drop=True)
