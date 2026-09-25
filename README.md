@@ -30,6 +30,18 @@ Capstone/
 
 In [`nn_carry_volatility.ipynb`](working_ideas/nn_carry_volatility.ipynb), we test direct carry, carry correction, volatility scaling, and scaling plus carry correction, with yearly results.
 
+### Results (2017–2025)
+
+We compare all models on the same 2,820 market-week observations. These are retrospective estimates of same-week position changes using current prices.
+
+| Model | R² | R² gain vs NN (pp) | Directional accuracy | MAE (contracts) |
+|---|---|---|---|---|
+| Original NN | 44.90% | — | 72.70% | 10,794 |
+| Direct carry | 46.93% | +2.03 | 73.48% | 10,635 |
+| Carry correction | 46.02% | +1.12 | 73.40% | 10,707 |
+| Volatility scaling | 47.27% | +2.37 | 73.30% | 10,600 |
+| **Scaling + carry correction** | **48.40%** | **+3.49** | **73.55%** | **10,499** |
+
 ## Paper replication: OIES Energy Insight 177
 
 [`paper_replication/`](paper_replication/) replicates *Momentum Trading and Managed Money Positioning in Energy: Relationships and Practical Applications* (Sun, Bouchouev and Fattouh, OIES Energy Insight 177, March 2026). It targets Insight 177 only, not every analysis in the earlier paper *Myths and Mysteries About Speculation in the Oil Market*.
