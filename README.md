@@ -4,6 +4,8 @@
 ```text
 Capstone/
 ├── README.md                                  # This file
+├── working_ideas/                             # Extensions to the replicated model
+│   └── nn_carry_volatility.ipynb               # Carry and volatility experiments
 └── paper_replication/                         # Replication of OIES Energy Insight 177
     ├── spec1.ipynb                            # Replication specification (equations, data contract)
     ├── data_required/
@@ -23,6 +25,10 @@ Capstone/
         ├── linear_regression/                 # Predictions, R² and accuracy tables, comparison with paper, figures/
         └── neural_network/                    # Network predictions, metrics, weekly features, figure
 ```
+
+## Working ideas
+
+In [`nn_carry_volatility.ipynb`](working_ideas/nn_carry_volatility.ipynb), we test direct carry, carry correction, volatility scaling, and scaling plus carry correction, with yearly results.
 
 ## Paper replication: OIES Energy Insight 177
 
