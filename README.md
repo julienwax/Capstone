@@ -5,7 +5,11 @@
 Capstone/
 ├── README.md                                  # This file
 ├── working_ideas/                             # Extensions to the replicated model
-│   └── nn_carry_volatility.ipynb               # Carry and volatility experiments
+│   ├── nn_carry_volatility.ipynb               # Carry and volatility experiments
+│   ├── nn_benchmark.ipynb                      # SG returns as a benchmark for the NN's trend/bias split
+│   ├── predict_sg_index.ipynb                  # Momentum layer trained on daily SG returns
+│   ├── sg_input_feature.ipynb                  # SG-derived features as nowcast corrections
+│   └── src/sg_cta.py                           # Helpers for the three SG notebooks
 └── paper_replication/                         # Replication of OIES Energy Insight 177
     ├── spec1.ipynb                            # Replication specification (equations, data contract)
     ├── data_required/
@@ -41,6 +45,12 @@ We compare all models on the same 2,820 market-week observations. These are retr
 | Carry correction | 46.02% | +1.12 | 73.40% | 10,707 |
 | Volatility scaling | 47.27% | +2.37 | 73.30% | 10,600 |
 | **Scaling + carry correction** | **48.40%** | **+3.49** | **73.55%** | **10,499** |
+
+Three notebooks use SG Prime Services index returns, to be read in order:
+
+- [`nn_benchmark.ipynb`](working_ideas/nn_benchmark.ipynb): SG Trend returns as a benchmark for the NN's split of Managed Money into trend (CTA) and bias (discretionary) positions. Energy P&L on trend positions correlates 0.35 with weekly SG Trend returns (rank 0.32); bias-position P&L only 0.06 by rank.
+- [`predict_sg_index.ipynb`](working_ideas/predict_sg_index.ipynb): the paper's momentum layer trained on daily SG Trend returns. Out-of-sample daily correlation 0.33 (2015–2025), below the fixed 20/120 rule (0.36).
+- [`sg_input_feature.ipynb`](working_ideas/sg_input_feature.ipynb): SG-implied flow and daily SG residual features, as weekly summaries or day by day, as corrections to the NN nowcast and as a one-week-ahead forecast. None beats the original NN (44.90% R², 2017–2025); weekly features change R² by −0.20 to −5.41 pp, day-by-day inputs by −2.32 to −21.65 pp.
 
 ## Paper replication: OIES Energy Insight 177
 
