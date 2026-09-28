@@ -1,0 +1,35 @@
+# Exact library versions used to produce the results in working_ideas/*.ipynb
+# (Python 3.12.14). Install with: pip install -r requirements.txt
+#
+# `paper_replication` itself is not on PyPI -- notebooks add its src/ to
+# sys.path directly, they don't pip-install it. This file only pins the
+# third-party packages that code actually imports.
+#
+# Caveat: pinning these versions removes one real source of run-to-run
+# difference, but the walk-forward NN fits in this repo (SharedMomentumNetwork
+# and its variants) are also sensitive to the CPU/BLAS backend itself -- the
+# same versions on different hardware can still give measurably different R²
+# (verified: see nn_carry_volatility.ipynb). Pin these for a start, but treat
+# any single R² figure as machine-specific, not a fixed ground truth.
+
+numpy==2.5.2
+pandas==2.2.3
+pyarrow==25.0.1
+scipy==1.18.0
+matplotlib==3.11.1
+# Exact local build here is torch==2.14.0+cu130 (CUDA 13.0 wheel from
+# download.pytorch.org), but all fits actually ran on CPU (no usable GPU in
+# this environment), so the plain PyPI build below is the closer match for a
+# typical CPU setup. Install the +cu130 build instead only if you also want
+# to match the CUDA wheel's bundled CPU/BLAS kernels exactly.
+torch==2.14.0
+statsmodels==0.15.0
+tqdm==4.70.0
+ipython==9.8.0
+
+# Needed only to execute notebooks headlessly (jupyter nbconvert --execute),
+# not to import the libraries above.
+ipykernel==7.3.0
+nbconvert==7.17.1
+nbformat==5.11.1
+jupyter_client==8.10.0

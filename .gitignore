@@ -22,3 +22,6 @@ Thumbs.db
 paper_replication/spec1.ipynb
 /paper_replication/derived/
 /paper_replication/NN_PAPER_ALIGNMENT.md
+
+# Local Claude context notes, not for the remote
+/CLAUDE.md
