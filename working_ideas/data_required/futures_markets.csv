@@ -1,0 +1,51 @@
+market,name,sector,exchange,bbg_exchange_code,bbg_root,yellow_key,generic_cycle,currency,point_value,generics_with_data,first_date,last_date,cash_index,papers,note
+ES,S&P 500 E-mini,Equities,CME,CME,ES,Index,HMUZ,USD,50.00,4,1997-09-09,2026-10-05,SPX Index,kestner+baz,
+SP,S&P 500 (big contract),Equities,CME,CME,SP,Index,HMUZ,USD,250.00,2,1988-01-04,2021-09-17,SPX Index,baz,big contract: history before the E-mini (1997); delisted 2021
+DM,Dow Jones E-mini,Equities,CBOT,CBT,DM,Index,HMUZ,USD,5.00,4,2002-04-04,2026-10-05,INDU Index,baz,
+NQ,Nasdaq-100 E-mini,Equities,CME,CME,NQ,Index,HMUZ,USD,20.00,4,1999-06-21,2026-10-05,NDX Index,baz,
+ND,Nasdaq-100 (big contract),Equities,CME,CME,ND,Index,HMUZ,USD,,2,1996-04-10,2015-06-18,NDX Index,baz,big contract: history before the E-mini (1999); data end 2015
+FA,S&P MidCap 400 E-mini,Equities,CME,CME,FA,Index,HMUZ,USD,100.00,4,2002-01-28,2026-10-05,MID Index,baz,
+MD,S&P MidCap 400 (big contract),Equities,CME,CME,MD,Index,HMUZ,USD,,1,1992-02-13,2015-06-18,MID Index,baz,"big contract: history before the E-mini (2002); front month only, data end 2015"
+VG,Euro Stoxx 50,Equities,Eurex,EUX,VG,Index,HMUZ,EUR,10.00,4,1998-06-22,2026-10-05,SX5E Index,kestner+baz,
+GX,DAX,Equities,Eurex,EUX,GX,Index,HMUZ,EUR,25.00,4,1990-11-23,2026-10-05,DAX Index,baz,
+CF,CAC 40,Equities,Euronext Paris,EOP,CF,Index,FGHJKMNQUVXZ,EUR,10.00,6,1988-12-07,2026-10-05,CAC Index,baz,
+SM,SMI,Equities,Eurex,EUX,SM,Index,HMUZ,CHF,10.00,4,1991-10-28,2026-10-05,SMI Index,baz,no futures data 1994-12-16 to 1997-12-22
+IB,IBEX 35,Equities,MEFF,MFM,IB,Index,FGHJKMNQUVXZ,EUR,10.00,6,1992-06-01,2026-10-05,IBEX Index,baz,
+BUX,Hungary BUX,Equities,Budapest SE,BSE,UO,Index,HMUZ,HUF,10.00,4,1997-11-10,2026-10-05,BUX Index,baz,"Bloomberg root UO (BU is a different, USD contract on CME)"
+OBX,Norway OBX,Equities,Oslo Bors,OBX,OI,Index,FGHJKMNQUVXZ,NOK,100.00,6,1993-06-17,2026-10-05,OBX Index,baz,
+AI,FTSE/JSE Top 40,Equities,JSE,SAF,AI,Index,HMUZ,ZAR,10.00,4,1994-05-16,2026-10-05,TOP40 Index,baz,
+FTASE,FTSE/ATHEX Large Cap,Equities,Athens EX,ADE,AJ,Index,FGHJKMNQUVXZ,EUR,2.00,6,1999-09-01,2026-10-05,FTASE Index,baz,quoted at one tenth of the cash index level
+NK,Nikkei 225,Equities,Osaka Exchange / SGX,OSE,NK,Index,HMUZ,JPY,1000.00,4,1988-09-05,2026-10-05,NKY Index,kestner+baz,
+TP,TOPIX,Equities,Osaka Exchange,OSE,TP,Index,HMUZ,JPY,10000.00,4,1990-05-16,2026-10-05,TPX Index,baz,
+XP,SPI 200,Equities,ASX,SFE,XP,Index,HMUZ,AUD,25.00,4,2000-05-02,2026-10-05,AS51 Index,baz,
+HI,Hang Seng,Equities,HKEX,HKG,HI,Index,FGHJKMNQUVXZ,HKD,50.00,6,1992-04-01,2026-10-05,HSI Index,baz,
+KM,KOSPI 200,Equities,KRX,KFE,KM,Index,HMUZ,KRW,250000.00,4,1996-05-03,2026-10-05,KOSPI2 Index,baz,
+TWSE,Taiwan TAIEX,Equities,TAIFEX / SGX,FTX,FT,Index,FGHJKMNQUVXZ,TWD,200.00,6,1998-07-21,2026-10-05,TWSE Index,baz,
+BZ,Bovespa,Equities,B3,BMF,BZ,Index,GJMQVZ,BRL,1.00,3,1995-07-12,2026-10-05,IBOV Index,baz,
+IS,Mexico IPC,Equities,MexDer,MDX,IS,Index,HMUZ,MXN,10.00,4,1999-05-03,2026-10-05,MEXBOL Index,baz,
+NIFTY,Nifty 50,Equities,NSE / SGX,NSE,NZ,Index,FGHJKMNQUVXZ,INR,65.00,4,2000-06-12,2026-10-05,NIFTY Index,baz,
+Z,FTSE 100,Equities,ICE Futures Europe,ICF,Z,Index,HMUZ,GBP,10.00,4,1988-02-26,2026-10-05,UKX Index,kestner+baz,
+EO,AEX,Equities,Euronext Amsterdam,EOE,EO,Index,FGHJKMNQUVXZ,EUR,200.00,6,1989-01-02,2026-10-05,AEX Index,baz,
+BE,BEL 20,Equities,Euronext Brussels,BFO,BE,Index,FGHJKMNQUVXZ,EUR,10.00,4,1993-10-29,2026-10-05,BEL20 Index,baz,
+TY,US 10-year Treasury note,Rates,CBOT,CBT,TY,Comdty,HMUZ,USD,1000.00,3,1988-01-04,2026-10-05,,kestner,
+RX,Euro-Bund (10-year),Rates,Eurex,EUX,RX,Comdty,HMUZ,EUR,1000.00,3,1990-11-23,2026-10-05,,kestner,
+G,UK Long Gilt,Rates,ICE Futures Europe,ICF,G,Comdty,HMUZ,GBP,1000.00,3,1988-01-04,2026-10-05,,kestner,
+JB,Japan 10-year government bond,Rates,Osaka Exchange,OSE,JB,Comdty,HMUZ,JPY,1000000.00,3,1988-01-04,2026-10-05,,kestner,
+EC,Euro FX,Currencies,CME,CME,EC,Curncy,HMUZ,USD,125000.00,4,1998-05-19,2026-10-05,,kestner,
+BP,British pound,Currencies,CME,CME,BP,Curncy,HMUZ,USD,625.00,4,1988-01-04,2026-10-05,,kestner,
+JY,Japanese yen,Currencies,CME,CME,JY,Curncy,HMUZ,USD,1250.00,4,1988-01-04,2026-10-05,,kestner,
+AD,Australian dollar,Currencies,CME,CME,AD,Curncy,HMUZ,USD,1000.00,4,1988-01-04,2026-10-05,,kestner,
+CL,WTI crude oil,Commodities,NYMEX,NYM,CL,Comdty,FGHJKMNQUVXZ,USD,1000.00,36,1988-01-04,2026-10-05,,kestner+baz,
+NG,Henry Hub natural gas,Commodities,NYMEX,NYM,NG,Comdty,FGHJKMNQUVXZ,USD,10000.00,36,1990-04-03,2026-10-05,,baz,
+GC,Gold,Commodities,COMEX,CMX,GC,Comdty,GJMQVZ,USD,100.00,18,1988-01-04,2026-10-05,,kestner+baz,
+SI,Silver,Commodities,COMEX,CMX,SI,Comdty,HKNUZ,USD,5000.00,15,1988-01-04,2026-10-05,,baz,
+PL,Platinum,Commodities,NYMEX,NYM,PL,Comdty,FJNV,USD,50.00,12,1988-01-04,2026-10-05,,baz,contract a year out mostly missing 1992-2009
+PA,Palladium,Commodities,NYMEX,NYM,PA,Comdty,HMUZ,USD,100.00,12,1988-01-04,2026-10-05,,baz,contract a year out mostly missing 1992-2009
+HG,Copper,Commodities,COMEX,CMX,HG,Comdty,HKNUZ,USD,250.00,15,1988-12-06,2026-10-05,,kestner+baz,
+C,Corn,Commodities,CBOT,CBT,C,Comdty,HKNUZ,USD,50.00,13,1988-01-04,2026-10-05,,baz,
+W,Wheat,Commodities,CBOT,CBT,W,Comdty,HKNUZ,USD,50.00,14,1988-01-04,2026-10-05,,baz,
+S,Soybeans,Commodities,CBOT,CBT,S,Comdty,FHKNQUX,USD,50.00,20,1988-01-04,2026-10-05,,kestner+baz,
+KC,Coffee,Commodities,ICE US,NYB,KC,Comdty,HKNUZ,USD,375.00,7,1988-01-04,2026-10-05,,baz,
+CC,Cocoa,Commodities,ICE US,NYB,CC,Comdty,HKNUZ,USD,10.00,10,1988-01-04,2026-10-05,,baz,
+SB,Sugar No. 11,Commodities,ICE US,NYB,SB,Comdty,HKNV,USD,1120.00,11,1988-01-04,2026-10-05,,baz,
+CT,Cotton,Commodities,ICE US,NYB,CT,Comdty,HKNVZ,USD,500.00,15,1988-01-04,2026-10-05,,baz,
