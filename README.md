@@ -9,7 +9,22 @@ Capstone/
 │   ├── nn_benchmark.ipynb                      # SG returns as a benchmark for the NN's trend/bias split
 │   ├── predict_sg_index.ipynb                  # Momentum layer trained on daily SG returns
 │   ├── sg_input_feature.ipynb                  # SG-derived features as nowcast corrections
-│   └── src/sg_cta.py                           # Helpers for the three SG notebooks
+│   ├── Replicating_CTA.ipynb                   # Kestner (2020): SG Trend Index from a 16-futures momentum portfolio
+│   ├── src/sg_cta.py                           # Helpers for the three SG notebooks
+│   ├── src/kestner.py                          # Helpers for Replicating_CTA.ipynb
+│   ├── tests/test_kestner.py                   # Roll, signal and timing tests for kestner.py
+│   └── data_required/                          # Cross-asset CTA data (see below)
+│       ├── futures_generic_prices.csv.gz       # Daily generic curves, 50 futures markets (Bloomberg)
+│       ├── futures_contract_chain.csv          # Every contract with its last trade date: the roll schedule
+│       ├── futures_markets.csv                 # One row per futures market: sector, root, cycle, currency, ...
+│       ├── swap_rates.csv.gz                   # 10Y and 7Y swap rates, 14 currencies (Bloomberg)
+│       ├── money_market_3m.csv.gz              # 3-month fixings, 14 currencies (Bloomberg)
+│       ├── fx_spot.csv.gz                      # FX spot, 30 currencies against USD (Bloomberg)
+│       ├── fx_forward_3m.csv.gz                # FX 3-month forwards (Bloomberg)
+│       ├── lme_forwards.csv.gz                 # LME nickel and aluminium, cash to 27 months (Bloomberg)
+│       ├── equity_indices.csv.gz               # 26 cash indices: level, dividend yield, total return (Bloomberg)
+│       ├── macro_cpi.csv                       # CPI, 31 economies + Taiwan (IMF, Eurostat, Bloomberg)
+│       └── macro_gdp.csv                       # Quarterly nominal GDP, 15 economies (IMF)
 └── paper_replication/                         # Replication of OIES Energy Insight 177
     ├── spec1.ipynb                            # Replication specification (equations, data contract)
     ├── data_required/
@@ -51,6 +66,77 @@ Three notebooks use SG Prime Services index returns, to be read in order:
 - [`nn_benchmark.ipynb`](working_ideas/nn_benchmark.ipynb): SG Trend returns as a benchmark for the NN's split of Managed Money into trend (CTA) and bias (discretionary) positions. Energy P&L on trend positions correlates 0.35 with weekly SG Trend returns (rank 0.32); bias-position P&L only 0.06 by rank.
 - [`predict_sg_index.ipynb`](working_ideas/predict_sg_index.ipynb): the paper's momentum layer trained on daily SG Trend returns. Out-of-sample daily correlation 0.33 (2015–2025), below the fixed 20/120 rule (0.36).
 - [`sg_input_feature.ipynb`](working_ideas/sg_input_feature.ipynb): SG-implied flow and daily SG residual features, as weekly summaries or day by day, as corrections to the NN nowcast and as a one-week-ahead forecast. None beats the original NN (44.90% R², 2017–2025); weekly features change R² by −0.20 to −5.41 pp, day-by-day inputs by −2.32 to −21.65 pp.
+
+### Replicating CTA returns across asset classes (Kestner, 2020)
+
+[`Replicating_CTA.ipynb`](working_ideas/Replicating_CTA.ipynb) replicates *Replicating CTA Positioning: An Improved Method* (Kestner, 2020) on the cross-asset data below. A volatility-scaled momentum portfolio on 16 futures (equity indices, bonds, currencies, commodities) explains weekly SG Trend Index returns, and its positions estimate what trend followers hold.
+
+| Result | Replication | Paper |
+|---|---|---|
+| R² of the ensemble (16-, 32- and 52-week lookbacks), 2015–2019 | 0.77 | above 0.75 |
+| R² of the 16/1/90, 32/1/90 and 52/1/90 models, 2015–2019 | 0.61, 0.67, 0.62 | ≈ 0.61, 0.67, 0.62 |
+| Mean gap to the paper's 15 sensitivity bars | 0.005 | — |
+| R² of the ensemble out of sample, January 2020 to August 2026 | 0.64 (0.53–0.77 by year) | — |
+
+- **Exposures** are on the paper's scale: up to 381% of capital in bonds, and between −$145bn and +$332bn in the four equity markets at $300bn of trend-following assets.
+- **A 20-week rolling regression lags the replication:** its S&P 500 beta best matches the replication's equity exposure from 12 weeks earlier.
+- **Choices the paper leaves open** (roll timing, how the ensemble averages its models) move the paper-window R² by at most 0.005. The notebook rolls five trading days before expiry.
+
+Run it from `working_ideas/`; it takes about 10 seconds. Figures and tables are saved to `paper_replication/outputs/replicating_cta/`.
+
+## Cross-asset CTA data (`working_ideas/data_required/`)
+
+Data for explaining CTA returns with momentum (and carry and value) portfolios across asset classes, built for two papers:
+
+- Kestner (2020), *Replicating CTA Positioning: An Improved Method*: 16 futures in equities, bonds, currencies and commodities.
+- Baz, Granger, Harvey, Le Roux and Rattray (2015), *Dissecting Investment Strategies in the Cross Section and Time Series*: carry, momentum and value on equity index futures, commodities, currencies and interest rate swaps, 1990–2015.
+
+The CTA returns to explain, the SG CTA and SG Trend indices, stay in `paper_replication/data_required/sg_cta_indices.csv`.
+
+**Sources.** A Bloomberg Terminal pull on 2026-10-05, daily from 1988-01-01, for everything except CPI and GDP, which come from DBnomics (IMF International Financial Statistics; euro-area HICP from Eurostat). Bloomberg data are proprietary.
+
+### Files
+
+| File | Contents | Coverage |
+|---|---|---|
+| `futures_generic_prices.csv.gz` | Generic futures curves (`ES1`, `ES2`, ...) for 50 markets: 28 equity index, 4 bond, 4 currency, 14 commodity. `PX_SETTLE`, `PX_LAST`, volume, open interest; same columns as `paper_replication`'s file. Commodities go 3 years out (`CL1`–`CL36`), financial futures about a year | 1988 (or listing) to 2026-10-05 |
+| `futures_contract_chain.csv` | Every contract of each market, expired ones included: delivery year and month, last trade date, and `in_generic_cycle` (whether the generic series steps through it) | 14,712 contracts |
+| `futures_markets.csv` | One row per market: name, sector, exchange, Bloomberg root and yellow key, generic cycle, currency, value of one point, data range, matching cash index, paper(s) using it, notes | 50 markets |
+| `swap_rates.csv.gz` | 10- and 7-year swap rates in percent (Bloomberg `CMPN` New York close), 14 currencies | From 1988–2001 by currency |
+| `money_market_3m.csv.gz` | 3-month fixings in percent (LIBOR, Euribor, BBSW, CDOR, NIBOR, STIBOR, ...), 14 currencies | From 1988–2001 |
+| `fx_spot.csv.gz` | Spot against USD, 30 currencies, with the quote convention | From 1988 (EM from 1991–1993) |
+| `fx_forward_3m.csv.gz` | 3-month forward points (non-deliverable forwards for KRW, INR, IDR, MYR, PHP, TWD, BRL, CLP, COP, PEN), Bloomberg's scale, outright forward | From 1988 (EM from 1995–2005) |
+| `lme_forwards.csv.gz` | LME nickel and aluminium: cash, 3, 15 and 27 months | From 1988 |
+| `equity_indices.csv.gz` | 26 cash indices: level, 12-month dividend yield in percent, gross total-return index | Levels from 1988; dividend yields mostly from 2000–2002 |
+| `macro_cpi.csv` | CPI for the 30 currencies' economies and the US (IMF; euro area from Eurostat, Germany kept as the pre-1996 proxy; Taiwan from Bloomberg) | Mostly 1950s to mid-2025 |
+| `macro_gdp.csv` | Quarterly nominal GDP in local currency, the 14 swap currencies plus Germany (IMF) | From 1950–1995 to 2025 |
+
+### How to use it
+
+- **Prices:** use `PX_SETTLE`, falling back on `PX_LAST`.
+- **Rolls:** Bloomberg's generics move to the next contract on the first trading day after the front contract's last trade date. Take the last trade dates from `futures_contract_chain.csv` with `in_generic_cycle` true. On a roll day, measure the return on the contract held, `G1(t) / G2(t-1) - 1`, never `G1(t) / G1(t-1) - 1`.
+- **Carry:** equity carry uses `G1` and `G2` with their last trade dates. Commodity carry uses the contract expiring a year after the front, generic number `1 + len(generic_cycle)` (`CL13`, `GC7`).
+- **FX:** `quote` is "USD per currency" for EUR, GBP, AUD and NZD and "currency per USD" otherwise. `forward = spot + forward_points / 10**fwd_scale`. Carry for a long position in the currency is `4 * (spot / forward - 1)` in USD per currency, `4 * (forward / spot - 1)` otherwise.
+- **Macro:** dates are the first day of the reference period, not release dates. Baz et al. lag GDP three months.
+
+### Checks run on this data
+
+- **Kestner (2020):** an ensemble of the 16-, 32- and 52-week momentum models explains weekly SG Trend Index returns with R² 0.75 over 2007–2019 and 0.77 over 2015–2019. The paper reports above 75%. Over 2015–2019 the single models give 0.60, 0.67 and 0.62, against about 0.61, 0.67 and 0.62 in its charts.
+- **Baz et al. (2015):** the first date each signal can be computed matches the paper's appendix for rates carry (all 14 currencies, to the day), FX carry, commodity carry and equity carry.
+- **Underlyings:** every equity future tracks its cash index (daily return correlation 0.85–0.99), the currency futures track FX spot, and CL is identical to `paper_replication`'s energy data.
+- **Rolls:** open interest confirms the roll the day after the last trade date in about 100% of testable cases for almost every market (OBX 79%).
+- **FX forwards:** carry correlates 0.96–1.00 with the 3-month rate differential (PHP 0.80).
+
+### Known issues
+
+- **No Finland futures.** The pulled `HX1 Index` is a USD contract on another exchange, not the OMX Helsinki 25 future, and is left out. The `HEX25` cash index is in `equity_indices.csv.gz`.
+- **Non-positive values.** Drop them, except WTI's genuine settlement of −37.63 on 2020-04-20. The others are zeros in far contracts (FTASE nearby 2–4 in 2010, silver nearby 10 and platinum nearby 6 in October 2016), the Bovespa level before 1989-12-21, and New Zealand CPI in 1920–1925.
+- **Gaps.** No SMI futures from 1994-12-16 to 1997-12-22; OBX futures are sparse in 1993–1994; FTASE has gaps in spring 2009 and in July 2015, when the Athens exchange closed.
+- **Platinum and palladium.** The contract a year out is mostly missing over 1992–2009. Compute their carry from the furthest available contract, annualised by the time between expiries.
+- **Big US index contracts.** `SP`, `ND` and `MD` give the history before the E-minis. `MD` has only its front month, so MidCap carry starts with the E-mini in 2002. When `SP` was delisted on 2021-09-17, every remaining contract got that last trade date.
+- **Dividend yields** start in 2000–2002 for most indices (2004 Nikkei, 2013 Hang Seng). They can be extended from the total-return and price indices, except for DAX, BUX, Bovespa and OBX, whose levels already include dividends.
+- **Series that stop.** The LIBOR-based swaps and fixings end between 2021 and 2024, and the IMF CPI and GDP in 2025. This does not affect the papers' samples.
+- **Not available.** Baz et al.'s history before 1988 (Man AHL and Global Financial Data), and the nine indices the paper lists but leaves out of its 26-index table.
 
 ## Paper replication: OIES Energy Insight 177
 
