@@ -8,7 +8,8 @@ liquid futures. Every week, at the last trading day's close, each market gets
 
 and the portfolio holds those weights over the following week. Futures data come from
 `working_ideas/data_required/` (Bloomberg generic curves and contract chain); the SG Trend Index
-from `paper_replication/data_required/sg_cta_indices.csv`.
+from `paper_replication/data_required/sg_cta_indices.csv`, and COT Managed Money positions from
+`paper_replication/data_required/managed_money.csv`.
 """
 from itertools import product
 
@@ -47,18 +48,9 @@ def load_markets(data_dir, paper="kestner"):
     return markets.assign(_order=order).sort_values("_order", kind="stable").drop(columns="_order").set_index("market")
 
 
-def held_contract_returns(px, last_trade, roll_days=5):
-    """Daily returns of the contract a trader holds, from generics 1 and 2 and the last trade dates.
-
-    `px` has the generic prices by date, columns 1 and 2. `last_trade` holds the last trade dates of
-    the contracts the generic steps through. The generic keeps the front contract through its last
-    trade date and moves to the next one the following day. A trader holds the front contract until
-    `roll_days` trading days before its last trade date and the next contract after that
-    (`roll_days=0` follows the generic). Each day's return is measured on the contract held at the
-    previous close, so no return ever spans two contracts. Non-positive prices are treated as missing,
-    and a day without a valid generic 1 price is skipped: the next return then covers both days
-    (WTI's −37.63 settlement on 2020-04-20 is the one case in Kestner's markets).
-    """
+def _held_contracts(px, last_trade, roll_days):
+    """Dates with a valid generic 1 price, generics 1 and 2 on them, the contract number of generic 1
+    and the contract held at each close (see `held_contract_returns`)."""
     px = px.where(px > 0)
     g1 = px[1].dropna()
     dates = g1.index
@@ -71,6 +63,22 @@ def held_contract_returns(px, last_trade, roll_days=5):
     expiry_pos = dates.searchsorted(ltd[np.minimum(front, len(ltd) - 1)])
     days_left = np.where(has_ltd, expiry_pos - np.arange(len(dates)), np.iinfo(int).max)
     held = front + (days_left < roll_days)                            # contract held at each close
+    return dates, g1, g2, front, held
+
+
+def held_contract_returns(px, last_trade, roll_days=5):
+    """Daily returns of the contract a trader holds, from generics 1 and 2 and the last trade dates.
+
+    `px` has the generic prices by date, columns 1 and 2. `last_trade` holds the last trade dates of
+    the contracts the generic steps through. The generic keeps the front contract through its last
+    trade date and moves to the next one the following day. A trader holds the front contract until
+    `roll_days` trading days before its last trade date and the next contract after that
+    (`roll_days=0` follows the generic). Each day's return is measured on the contract held at the
+    previous close, so no return ever spans two contracts. Non-positive prices are treated as missing,
+    and a day without a valid generic 1 price is skipped: the next return then covers both days
+    (WTI's −37.63 settlement on 2020-04-20 is the one case in Kestner's markets).
+    """
+    dates, g1, g2, front, held = _held_contracts(px, last_trade, roll_days)
 
     def price(contract, i):
         """Price at date i of a contract that is generic 1 or 2 that day."""
@@ -84,8 +92,14 @@ def held_contract_returns(px, last_trade, roll_days=5):
     return pd.Series(np.r_[np.nan, ret], index=dates, name="return")
 
 
-def daily_returns(data_dir, markets, roll_days=5):
-    """Daily held-contract returns, one column per market (local currency, excess of cash)."""
+def held_contract_prices(px, last_trade, roll_days=5):
+    """Closing price of the contract held after each close: generic 1, or generic 2 once rolled."""
+    dates, g1, g2, front, held = _held_contracts(px, last_trade, roll_days)
+    return pd.Series(np.where(held == front, g1, g2), index=dates, name="price")
+
+
+def _by_market(data_dir, markets, held_fn, roll_days):
+    """`held_fn(generic prices, last trade dates, roll_days)` for each market, one column per market."""
     gen = pd.read_csv(data_dir / "futures_generic_prices.csv.gz", parse_dates=["date"])
     gen = gen[gen["market"].isin(markets.index) & gen["nearby"].isin([1, 2])]
     gen["px"] = gen["PX_SETTLE"].fillna(gen["PX_LAST"])
@@ -94,8 +108,18 @@ def daily_returns(data_dir, markets, roll_days=5):
     out = {}
     for m in markets.index:
         px = gen[gen["market"] == m].pivot_table(index="date", columns="nearby", values="px")
-        out[m] = held_contract_returns(px, chain.loc[chain["market"] == m, "last_trade_date"], roll_days)
+        out[m] = held_fn(px, chain.loc[chain["market"] == m, "last_trade_date"], roll_days)
     return pd.DataFrame(out).sort_index()
+
+
+def daily_returns(data_dir, markets, roll_days=5):
+    """Daily held-contract returns, one column per market (local currency, excess of cash)."""
+    return _by_market(data_dir, markets, held_contract_returns, roll_days)
+
+
+def daily_prices(data_dir, markets, roll_days=5):
+    """Daily closing prices of the held contract, one column per market (local currency)."""
+    return _by_market(data_dir, markets, held_contract_prices, roll_days)
 
 
 def load_sg_trend(path):
@@ -104,23 +128,32 @@ def load_sg_trend(path):
     return sg["SG Trend Index"].dropna()
 
 
+def load_managed_money(path, market, basis="futures_only"):
+    """Weekly COT Managed Money net position (contracts), indexed by the report week's Tuesday."""
+    mm = pd.read_csv(path, parse_dates=["report_week_tuesday"])
+    mm = mm[(mm["market"] == market) & (mm["basis"] == basis)]
+    return mm.set_index("report_week_tuesday")["mm_net"].sort_index()
+
+
 # ---------------------------------------------------------------- weekly model
+# Weeks end on Friday (`week_end="W-FRI"`), labelled by that Friday; a week's values are taken at
+# its last trading day. `week_end="W-TUE"` gives weeks ending on Tuesday, the COT reports' date.
 
-def weekly_returns(daily):
-    """Compounded returns between consecutive weeks' last trading days (weeks end on Friday)."""
-    weekly = (1 + daily.fillna(0)).resample("W-FRI").prod() - 1
-    return weekly.where(daily.notna().resample("W-FRI").sum() > 0)
+def weekly_returns(daily, week_end="W-FRI"):
+    """Compounded returns between consecutive weeks' last trading days."""
+    weekly = (1 + daily.fillna(0)).resample(week_end).prod() - 1
+    return weekly.where(daily.notna().resample(week_end).sum() > 0)
 
 
-def weekly_level_returns(level):
+def weekly_level_returns(level, week_end="W-FRI"):
     """Weekly returns of a daily index level, from one week's last value to the next."""
-    return level.resample("W-FRI").last().pct_change(fill_method=None)
+    return level.resample(week_end).last().pct_change(fill_method=None)
 
 
-def weekly_vol(daily, window):
+def weekly_vol(daily, window, week_end="W-FRI"):
     """Weekly volatility: standard deviation of the last `window` daily returns times sqrt(5), at week end."""
     vol = daily.rolling(window, min_periods=int(0.75 * window)).std()
-    return vol.resample("W-FRI").last() * np.sqrt(5)
+    return vol.resample(week_end).last() * np.sqrt(5)
 
 
 def signals(weekly, vol, lookback, cap):

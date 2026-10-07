@@ -42,6 +42,22 @@ def test_early_roll_switches_contract_before_last_trade_date():
     np.testing.assert_allclose(r.iloc[5:], b[5:] / b[4:9] - 1)
 
 
+def test_held_price_switches_with_the_position():
+    px, ltd, a, b = _generics()
+    p = K.held_contract_prices(px, ltd, roll_days=2)
+    # A is held through day 3's close, B from day 4's (see the early-roll test). Day 9 is left out:
+    # B expires after the data ends, and the roll logic then counts days to the end of the data.
+    np.testing.assert_allclose(p.iloc[:4], a[:4])
+    np.testing.assert_allclose(p.iloc[4:9], b[4:9])
+
+
+def test_weeks_can_end_on_tuesday():
+    daily = pd.Series(0.01, index=pd.bdate_range("2020-01-06", periods=10))   # Mon 6 to Fri 17 Jan
+    weekly = K.weekly_returns(daily, week_end="W-TUE")
+    assert list(weekly.index.dayofweek) == [1, 1, 1]
+    np.testing.assert_allclose(weekly, [1.01 ** 2 - 1, 1.01 ** 5 - 1, 1.01 ** 3 - 1])
+
+
 def test_non_positive_prices_are_skipped():
     px, ltd, a, _ = _generics()
     px.iloc[2, 0] = -5.0
