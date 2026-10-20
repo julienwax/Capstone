@@ -58,6 +58,17 @@ def test_weeks_can_end_on_tuesday():
     np.testing.assert_allclose(weekly, [1.01 ** 2 - 1, 1.01 ** 5 - 1, 1.01 ** 3 - 1])
 
 
+def test_straddle_delta_is_bounded_and_follows_the_trend():
+    rng = np.random.default_rng(1)
+    r = pd.Series(0.002 + 0.01 * rng.normal(size=300), index=pd.bdate_range("2020-01-01", periods=300))
+    up = K.straddle_delta(r.cumsum(), r, 60)
+    down = K.straddle_delta(-r.cumsum(), -r, 60)
+    assert up.iloc[:59].isna().all()
+    assert up.dropna().between(-1, 1).all()
+    np.testing.assert_allclose(down.dropna(), -up.dropna())     # symmetric in the price direction
+    assert up.iloc[-1] > 0.5                                     # steady rise: near the top of the range
+
+
 def test_non_positive_prices_are_skipped():
     px, ltd, a, _ = _generics()
     px.iloc[2, 0] = -5.0

@@ -2,7 +2,7 @@ owen/
 EPA/
 .vscode/
 *.pdf
-
+working_ideas/slides
 
 # Python
 __pycache__/

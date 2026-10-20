@@ -15,6 +15,7 @@ from itertools import product
 
 import numpy as np
 import pandas as pd
+from scipy.stats import norm
 
 SECTORS = ["Equities", "Rates", "Currencies", "Commodities"]
 
@@ -161,6 +162,30 @@ def signals(weekly, vol, lookback, cap):
     return (weekly.rolling(lookback).mean() / vol * np.sqrt(lookback)).clip(-cap, cap)
 
 
+def straddle_delta(log_price, log_return, n):
+    """Delta of an n-day look-back straddle, doubled to lie in (-1, 1) (arXiv 2507.15876, eq. 4).
+
+    Phi(ln(S/m) / (sigma sqrt n)) - Phi(ln(M/S) / (sigma sqrt n)), with m and M the n-day low and
+    high and sigma the n-day root mean square daily log return: near +1 at a new high after a large
+    move relative to volatility, near -1 at a new low, near 0 mid-range.
+    """
+    high = log_price.rolling(n, min_periods=n).max()
+    low = log_price.rolling(n, min_periods=n).min()
+    scale = np.sqrt(log_return.pow(2).rolling(n, min_periods=n).sum() / (n - 1) * n)
+    scale = scale.where(scale > 0)
+    delta = norm.cdf((log_price - low) / scale) - norm.cdf((high - log_price) / scale)
+    return pd.Series(2 * delta, index=log_price.index)
+
+
+def straddle_signals(daily, n, week_end="W-FRI"):
+    """n-day straddle delta of each market, from its own trading days, at each week's last close."""
+    out = {}
+    for market, r in daily.items():
+        r = np.log1p(r.dropna())
+        out[market] = straddle_delta(r.cumsum(), r, n)
+    return pd.DataFrame(out).resample(week_end).last()
+
+
 def weights(sig, vol):
     """Notional weights per unit of capital: signal / annualized vol, divided by the number of markets."""
     w = sig / (vol * np.sqrt(52))
@@ -223,6 +248,11 @@ def ensemble(weekly, vols, sg_weekly, lookbacks=ENSEMBLE, span=FULL_WINDOW):
     k = leverage(ret, sg_weekly, span)
     returns["Ensemble"] = ret * k
     return pd.DataFrame(returns), w * k
+
+
+def blend(weekly, weight_sets, sg_weekly, span=FULL_WINDOW):
+    """Average of several models' weights, each first scaled to SG Trend volatility (as in `ensemble`)."""
+    return sum(w * leverage(portfolio(weekly, w), sg_weekly, span) for w in weight_sets) / len(weight_sets)
 
 
 # ---------------------------------------------------------------- exposures and regression
