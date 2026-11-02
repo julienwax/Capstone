@@ -10,9 +10,12 @@ Capstone/
 │   ├── predict_sg_index.ipynb                  # Momentum layer trained on daily SG returns
 │   ├── sg_input_feature.ipynb                  # SG-derived features as nowcast corrections
 │   ├── Replicating_CTA.ipynb                   # Kestner (2020): SG Trend Index from a 16-futures momentum portfolio
+│   ├── position_analysis.ipynb                 # Co-movement of Managed Money across the six energy futures, 2026 Hormuz crisis
 │   ├── src/sg_cta.py                           # Helpers for the three SG notebooks
 │   ├── src/kestner.py                          # Helpers for Replicating_CTA.ipynb
+│   ├── src/positioning.py                      # Helpers for position_analysis.ipynb
 │   ├── tests/test_kestner.py                   # Roll, signal and timing tests for kestner.py
+│   ├── tests/test_positioning.py               # Correlation, clustering and spread tests for positioning.py
 │   └── data_required/                          # Cross-asset CTA data (see below)
 │       ├── futures_generic_prices.csv.gz       # Daily generic curves, 50 futures markets (Bloomberg)
 │       ├── futures_contract_chain.csv          # Every contract with its last trade date: the roll schedule
@@ -83,6 +86,10 @@ Three notebooks use SG Prime Services index returns, to be read in order:
 - **Choices the paper leaves open** (roll timing, how the ensemble averages its models) move the paper-window R² by at most 0.005. The notebook rolls five trading days before expiry.
 
 Run it from `working_ideas/`; it takes about 10 seconds. Figures and tables are saved to `paper_replication/outputs/replicating_cta/`.
+
+### Managed Money across the oil complex and the 2026 Hormuz crisis
+
+[`position_analysis.ipynb`](working_ideas/position_analysis.ipynb) studies how weekly changes in Managed Money co-move across the six energy futures (2011–2026): rolling 6×6 correlations, clusters of markets and of periods, and the network's discretionary part. Oil positions correlate 0.32–0.64 against 0.75–0.96 for prices, and that co-movement has weakened since 2020. During the 2026 war it broke: the 26-week WTI–Brent correlation of position changes fell from 0.55 to 0.01 while their returns correlated 0.97, and funds traded the crisis through Brent, as in the OIES comment *Shifting Oil Market Positioning During the Strait of Hormuz Crisis* (October 2026). The trend signals stayed correlated across the oil markets, but positions stopped following them outside Brent (slope on the network's trend part 1.23 in Brent, −0.02 in WTI by August), which accounts for almost all of the break; earlier breaks (2015, 2020, 2021) also came from positions rather than prices. It needs the network's expanded-run predictions (`paper_replication/outputs/neural_network/model_predictions_expanded.csv`) and takes about 25 seconds; outputs go to `paper_replication/outputs/position_analysis/`.
 
 ## Cross-asset CTA data (`working_ideas/data_required/`)
 
