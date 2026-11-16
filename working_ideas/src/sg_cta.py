@@ -12,7 +12,7 @@ from torch import nn
 
 from paper_replication.config import HORIZONS, MARKETS
 from paper_replication.data import build_daily_features, build_rolling_contract, build_weekly_panel, load_inputs
-from paper_replication.model import PaperAdam, align_bias_state, fit_window, reaction
+from paper_replication.model import PaperAdam, SharedMomentumNetwork, align_bias_state, fit_window, reaction
 
 MARKETS = list(MARKETS)
 FEATURES = [f"x_{h}" for h in HORIZONS]
@@ -21,7 +21,7 @@ KEYS = ["report_week_tuesday", "market"]
 MULTIPLIER = {"WTI": 1000, "BRENT": 1000, "GASOIL": 100, "HEATOIL": 420, "RBOB": 420, "NATGAS": 10000}
 SG_SERIES = {"SG Trend Index": "SG Trend", "SG CTA Index": "SG CTA", "SG Trend Indicator": "SG Trend Indicator"}
 PNL_LABELS = {"pnl_trend": "Trend positions", "pnl_bias": "Bias positions", "pnl_residual": "Fit residual",
-              "pnl_mm": "Total MM", "pnl_rule": "20/120 rule"}
+              "pnl_nontrend": "Discretionary + noise", "pnl_mm": "Total MM", "pnl_rule": "20/120 rule"}
 
 
 def _tensor(a):
@@ -67,12 +67,34 @@ def weekly_tensors(panel, config):
 
 # ------------------------------------------------ 0. trend / bias decomposition
 
-def run_decomposition(panel, config):
+def fit_combined_window(x, y, config, initial_state=None):
+    """`fit_window` with one constant bias per market in place of the time-varying bias.
+
+    The momentum layer, its L1 penalty, the optimizer and the epochs are unchanged. Without a
+    time-varying bias, discretionary positioning is not separated from noise: both stay in the
+    residual. A one-column bias makes `SharedMomentumNetwork` broadcast it and skip the smoothness penalty.
+    """
+    model = SharedMomentumNetwork(MARKETS, HORIZONS, 1, config.seed)
+    if initial_state is not None:
+        model.load_state_dict(initial_state)
+    optimizer = PaperAdam(model.parameters(), lr=config.learning_rate,
+                          betas=(config.adam_beta1, config.adam_beta2), eps=config.adam_epsilon)
+    for _ in range(config.first_epochs if initial_state is None else config.rolling_epochs):
+        optimizer.zero_grad(set_to_none=True)
+        loss, _, _ = model.objective(x, y, lambda_w=config.lambda_w, lambda_bias=config.lambda_bias)
+        loss.backward()
+        optimizer.step()
+    return model
+
+
+def run_decomposition(panel, config, combined=False):
     """Refit the replication network weekly and keep its trend and bias components.
 
     Uses the same windows, warm starts and seed as `run_replication`, so
     mm_std_lag * (trend_cur - trend_prev) equals the baseline predicted change.
     Also returns each fit's linearized horizon loading, sum_k W_m(k) w_k(n) averaged over markets.
+    With combined=True the network is `fit_combined_window`: bias_prev is the constant bias, and
+    mm_std_lag * (trend_cur - trend_prev) is that network's predicted change.
     """
     weeks, x, y, evaluation_weeks = weekly_tensors(panel, config)
     records, loadings, state, state_dates = [], [], None, None
@@ -80,8 +102,12 @@ def run_decomposition(panel, config):
         if i < config.train_weeks or week not in evaluation_weeks:
             continue
         train_dates = weeks[i - config.train_weeks:i]
-        initial = None if state is None else align_bias_state(state, state_dates, train_dates)
-        model = fit_window(x[i - config.train_weeks:i], y[i - config.train_weeks:i], config, initial)
+        if combined:
+            initial = state
+        else:
+            initial = None if state is None else align_bias_state(state, state_dates, train_dates)
+        fit = fit_combined_window if combined else fit_window
+        model = fit(x[i - config.train_weeks:i], y[i - config.train_weeks:i], config, initial)
         state = {k: v.detach().clone() for k, v in model.state_dict().items()}
         state_dates = train_dates
         with torch.no_grad():
@@ -126,15 +152,18 @@ def weekly_energy_pnl(panel, daily, decomposition, sg_log_levels):
 
     pnl = weekly.groupby("report_week_tuesday").agg(
         panel_date=("panel_date", "min"), panel_date_prev=("panel_date_prev", "min"),
-        **{c: (c, "sum") for c in PNL_LABELS})
+        **{c: (c, "sum") for c in PNL_LABELS if c in weekly})
     level_at = lambda dates: sg_log_levels.reindex(pd.DatetimeIndex(dates), method="ffill").to_numpy()
     pnl[list(sg_log_levels.columns)] = 100 * (level_at(pnl["panel_date"]) - level_at(pnl["panel_date_prev"]))
     return pnl
 
 
-def pnl_correlations(pnl, target="SG Trend"):
-    """Pearson, rank and excluding-2020 correlations of each P&L series with an SG return."""
-    cols, y = list(PNL_LABELS), pnl[target]
+def pnl_correlations(pnl, target="SG Trend", cols=None):
+    """Pearson, rank and excluding-2020 correlations of each P&L series with an SG return.
+
+    `cols` defaults to every P&L series in PNL_LABELS that `pnl` has.
+    """
+    cols, y = [c for c in (cols or PNL_LABELS) if c in pnl], pnl[target]
     no_2020 = pnl.index.year != 2020
     return pd.DataFrame({
         "Pearson": pnl[cols].corrwith(y),
@@ -143,12 +172,13 @@ def pnl_correlations(pnl, target="SG Trend"):
     }).rename(index=PNL_LABELS)
 
 
-def attribution_table(pnl, periods):
-    """Joint regression of SG returns on standardized trend, bias and residual P&L (Newey-West, 4 lags).
+def attribution_table(pnl, periods, cols=("pnl_trend", "pnl_bias", "pnl_residual")):
+    """Joint regression of SG returns on standardized P&L series (Newey-West, 4 lags).
 
-    `periods` maps a row label to (SG series, first year, last year).
+    `periods` maps a row label to (SG series, first year, last year); `cols` are the
+    regressors, by default trend, bias and residual P&L.
     """
-    cols = ["pnl_trend", "pnl_bias", "pnl_residual"]
+    cols = list(cols)
     rows = {}
     for label, (series, first, last) in periods.items():
         frame = pnl.loc[pnl.index.year.isin(range(first, last + 1))]
