@@ -1,10 +1,14 @@
 """Mean-reversion portfolio on inter-commodity spreads, for `spread_mean_reversion.ipynb`.
 
-A spread is long leg A and short leg B in equal barrels, both in the same delivery month. The rule uses prices
-only: it sells the spread when it is above its recent average and buys it when below, sized by the spread's
-volatility. Its weekly position change in each leg is the implied spread flow, to set against Managed Money
-changes, or with the errors of the Insight 177 network, in the same way as the trend flow of
+A spread is one dollar long leg A and one dollar short leg B, both in the same delivery month. Its return is
+the return of A minus the return of B, so a move common to both legs cancels. The rule uses prices only: it
+sells the spread when its cumulated return is above its recent average and buys it when below, sized by the
+spread's volatility. Its weekly position change in each leg is the implied spread flow, to set against Managed
+Money changes, or the errors of the Insight 177 network, in the same way as the trend flow of
 `commodity_trend.trend_panel`.
+
+`basket_panel` applies the same rule to several markets at once: each market against the equal-weighted basket
+of all of them. With two markets it is the pair.
 
 Nothing calibrates the capital of spread traders, so `RISK_USD` is arbitrary: correlations, signs and R2 are
 identified, the number of contracts is not.
@@ -16,8 +20,9 @@ import pandas as pd
 
 # Leg A, leg B. Leg A is the one whose contract expires first for a given delivery month: it sets the roll.
 PAIRS = {"Brent-WTI": ("BRENT", "WTI"), "Heating oil-Gasoil": ("HEATOIL", "GASOIL")}
+BASKET = ("BRENT", "WTI", "HEATOIL", "GASOIL")   # Brent first: its contract expires first, so it sets the roll
+POINT_VALUE = {"BRENT": 1000, "WTI": 1000, "HEATOIL": 420, "RBOB": 420, "GASOIL": 100}   # USD per point, one contract
 USD_PER_BBL = {"BRENT": 1.0, "WTI": 1.0, "HEATOIL": 0.42, "RBOB": 0.42, "GASOIL": 1 / 7.45}  # quote -> USD/bbl
-BBL_PER_CONTRACT = {"BRENT": 1000, "WTI": 1000, "HEATOIL": 1000, "RBOB": 1000, "GASOIL": 745}
 LOOKBACKS = (4, 13, 26)   # weeks
 CAP = 1.0
 RISK_USD = 1e8            # annualized dollar volatility of a spread position at full signal (arbitrary)
@@ -32,7 +37,7 @@ def load_energy(paper_data_dir):
 
 
 def contract_prices(generic, meta, market, nearbys=4):
-    """Prices in USD/bbl by date and delivery month (year * 12 + month - 1), from the first `nearbys` generics.
+    """Prices by date and delivery month (year * 12 + month - 1), from the first `nearbys` generics.
 
     Returns the price table and the last trade date of each delivery month.
     """
@@ -42,7 +47,7 @@ def contract_prices(generic, meta, market, nearbys=4):
     g = generic[(generic["market"] == market) & (generic["nearby"] <= nearbys)].dropna(subset=["px"])
     number = np.searchsorted(ltd, g["date"].to_numpy(), side="left") + g["nearby"].to_numpy() - 1
     table = pd.DataFrame({"date": g["date"].to_numpy(), "month": month[number], "px": g["px"].to_numpy()})
-    return table.pivot(index="date", columns="month", values="px") * USD_PER_BBL[market], pd.Series(ltd, index=month)
+    return table.pivot(index="date", columns="month", values="px"), pd.Series(ltd, index=month)
 
 
 def held_month(dates, last_trade, roll_days=5):
@@ -54,38 +59,54 @@ def held_month(dates, last_trade, roll_days=5):
     return pd.Series(last_trade.index[front + (days_left < roll_days)], index=dates)
 
 
+def matched_returns(generic, meta, markets, roll_days=5):
+    """Daily returns and prices of `markets`, all in the delivery month the first market holds, on their common days.
+
+    The first market must be the one whose contract expires first for a given delivery month: it sets the roll.
+    Each day's return is measured on the delivery month held at the previous close, so it never spans two
+    contracts in any market. Days on which one of the exchanges is closed are skipped: the next return covers
+    them. Prices are those of the month held after the close. Returns (returns, prices, held month).
+    """
+    tables = {m: contract_prices(generic, meta, m) for m in markets}
+    dates = tables[markets[0]][0].index
+    months = tables[markets[0]][0].columns
+    for m in markets[1:]:
+        dates, months = dates.intersection(tables[m][0].index), months.intersection(tables[m][0].columns)
+    held = held_month(tables[markets[0]][0].index, tables[markets[0]][1], roll_days).reindex(dates)
+    col, row = months.get_indexer(held.to_numpy()), np.arange(len(dates))
+    returns, prices = {}, {}
+    for m in markets:
+        p = tables[m][0].loc[dates, months].to_numpy()
+        returns[m] = np.r_[np.nan, p[row[1:], col[:-1]] / p[row[:-1], col[:-1]] - 1]
+        prices[m] = p[row, col]
+    return pd.DataFrame(returns, index=dates), pd.DataFrame(prices, index=dates), held
+
+
 def daily_spread(generic, meta, leg_a, leg_b, roll_days=5):
-    """Daily level and P&L of long `leg_a`, short `leg_b`, in USD/bbl, both legs in the delivery month leg A holds.
+    """Daily returns and prices of the two legs, both in the delivery month leg A holds (`matched_returns`).
 
-    The P&L of a day is measured on the delivery month held at the previous close, so it never spans two
-    contracts in either leg. Days on which either exchange is closed are skipped: the next P&L covers them.
+    `ret` is the return of one dollar long `leg_a` and one dollar short `leg_b`. `price_a` and `price_b` are the
+    prices of the month held after the close, and `ratio` is their ratio in USD per barrel.
     """
-    pa, ltd_a = contract_prices(generic, meta, leg_a)
-    pb, _ = contract_prices(generic, meta, leg_b)
-    held = held_month(pa.index, ltd_a, roll_days)
-    months = pa.columns.intersection(pb.columns)
-    value = (pa[months] - pb[months]).dropna(how="all")
-    held = held.reindex(value.index)
-    v = value.to_numpy()
-    col = months.get_indexer(held.to_numpy())
-    row = np.arange(len(v))
-    level = v[row, col]
-    pnl = np.r_[np.nan, v[row[1:], col[:-1]] - v[row[:-1], col[:-1]]]
-    return pd.DataFrame({"level": level, "pnl": pnl, "month": held.to_numpy()}, index=value.index)
+    returns, prices, held = matched_returns(generic, meta, [leg_a, leg_b], roll_days)
+    return pd.DataFrame({"ret": returns[leg_a] - returns[leg_b], "ret_a": returns[leg_a], "ret_b": returns[leg_b],
+                         "price_a": prices[leg_a], "price_b": prices[leg_b],
+                         "ratio": prices[leg_a] * USD_PER_BBL[leg_a] / (prices[leg_b] * USD_PER_BBL[leg_b]),
+                         "month": held.to_numpy()})
 
 
-def weekly_vol(daily_pnl, window=90, week_end="W-TUE"):
-    """Weekly volatility in USD/bbl: standard deviation of the last `window` overlapping five-day P&L sums.
+def weekly_vol(daily_ret, window=90, week_end="W-TUE"):
+    """Weekly volatility: standard deviation of the last `window` overlapping five-day sums of the spread return.
 
-    Five-day sums, not daily P&L times sqrt(5): gasoil settles in London about three hours before heating oil
-    in New York, so the daily spread P&L reverses the next day (autocorrelation -0.44) and overstates weekly risk.
+    Five-day sums, not daily returns times sqrt(5): gasoil settles in London about three hours before heating
+    oil in New York, so the daily spread return reverses the next day and overstates weekly risk.
     """
-    vol = daily_pnl.rolling(5).sum().rolling(window, min_periods=int(0.75 * window)).std()
+    vol = daily_ret.rolling(5).sum().rolling(window, min_periods=int(0.75 * window)).std()
     return vol.resample(week_end).last()
 
 
 def reversion_signal(cum, vol, lookbacks=LOOKBACKS, cap=CAP):
-    """Minus the capped distance of the cumulated spread P&L from its `n`-week average, by lookback.
+    """Minus the capped distance of the cumulated spread return from its `n`-week average, by lookback.
 
     The distance is divided by its standard deviation under a random walk with weekly volatility `vol`,
     vol * sqrt((n - 1)(2n - 1) / (6n)), so each signal has unit variance before the cap, as Kestner's momentum.
@@ -101,23 +122,58 @@ def spread_panel(generic, meta, pair, weeks, roll_days=5, week_end="W-TUE", vol_
                  lookbacks=LOOKBACKS, cap=CAP, risk_usd=RISK_USD):
     """Weekly mean-reversion position in one spread, on the report weeks `weeks`.
 
-    The position, in units of 1,000 barrels of spread, is N = u * h, with u the average signal and
-    h = risk / (annualized volatility * 1,000) the sizing. Its weekly change splits exactly into signal flow,
-    (u_t - u_{t-1}) * h_{t-1}, and sizing flow, u_t * (h_t - h_{t-1}). `flow` has the change in contracts of
-    each leg: positive in leg A and negative in leg B when the rule buys the spread.
+    The rule holds D = u * risk / annualized volatility dollars of leg A and -D dollars of leg B, with u the
+    average signal. In contracts, leg m holds +/- u * h_m with h_m = risk / (annualized volatility * price *
+    point value). The weekly change splits exactly into signal flow, +/- (u_t - u_{t-1}) * h_{m,t-1}, and
+    sizing flow, +/- u_t * (h_{m,t} - h_{m,t-1}), as in `commodity_trend.trend_panel`. `contracts`, `flow`,
+    `signal_flow` and `sizing_flow` have one column per leg.
     """
     leg_a, leg_b = PAIRS[pair]
     daily = daily_spread(generic, meta, leg_a, leg_b, roll_days)
-    pnl = daily["pnl"].resample(week_end).sum().where(daily["pnl"].notna().resample(week_end).sum() > 0)
-    vol = weekly_vol(daily["pnl"], vol_days, week_end)
-    signals = reversion_signal(pnl.cumsum(), vol, lookbacks, cap)
-    u = signals.mean(axis=1, skipna=False).reindex(weeks)
-    h = (risk_usd / (vol * np.sqrt(52) * 1000)).reindex(weeks)
-    units = u * h
-    d_units = units.diff()
-    flow = pd.DataFrame({leg_a: d_units * 1000 / BBL_PER_CONTRACT[leg_a],
-                         leg_b: -d_units * 1000 / BBL_PER_CONTRACT[leg_b]})
-    return SimpleNamespace(pair=pair, legs=(leg_a, leg_b), daily=daily, pnl=pnl.reindex(weeks),
-                           level=daily["level"].resample(week_end).last().reindex(weeks), vol=vol.reindex(weeks),
-                           signals=signals.reindex(weeks), signal=u, units=units, d_units=d_units,
-                           signal_flow=u.diff() * h.shift(1), sizing_flow=u * h.diff(), flow=flow)
+    count = daily["ret"].notna().resample(week_end).sum()
+    ret = daily["ret"].resample(week_end).sum().where(count > 0)
+    vol = weekly_vol(daily["ret"], vol_days, week_end)
+    signals = reversion_signal(ret.cumsum(), vol, lookbacks, cap).reindex(weeks)
+    u = signals.mean(axis=1, skipna=False)
+    annual_vol = vol.reindex(weeks) * np.sqrt(52)
+    price = daily[["price_a", "price_b"]].resample(week_end).last().reindex(weeks)
+    h = pd.DataFrame({leg_a: risk_usd / (annual_vol * price["price_a"] * POINT_VALUE[leg_a]),
+                      leg_b: -risk_usd / (annual_vol * price["price_b"] * POINT_VALUE[leg_b])})
+    contracts = h.mul(u, axis=0)
+    return SimpleNamespace(pair=pair, legs=(leg_a, leg_b), daily=daily, ret=ret.reindex(weeks), vol=vol.reindex(weeks),
+                           ratio=daily["ratio"].resample(week_end).last().reindex(weeks), signals=signals, signal=u,
+                           dollars=u * risk_usd / annual_vol, contracts=contracts, flow=contracts.diff(),
+                           signal_flow=h.shift(1).mul(u.diff(), axis=0), sizing_flow=h.diff().mul(u, axis=0))
+
+
+def basket_panel(generic, meta, weeks, markets=BASKET, roll_days=5, week_end="W-TUE", vol_days=90,
+                 lookbacks=LOOKBACKS, cap=CAP, risk_usd=RISK_USD):
+    """Weekly mean-reversion positions in several markets at once, on the report weeks `weeks`.
+
+    Each market is traded against the equal-weighted basket of all `markets`: its relative return is its
+    return minus the basket's, and the signal u_m is `reversion_signal` on the cumulated relative return. One
+    dollar of the spread "market m minus basket" is one dollar long m and 1/N dollars short every market, so
+    with G_m = u_m * (risk / N) / annualized volatility of the relative return, the dollars held in market m are
+
+        D_m = G_m - mean over the markets of G,
+
+    which sum to zero. Each of the N spreads gets risk / N, so that with two markets this is exactly
+    `spread_panel`: D_A = -D_B = u * risk / annualized volatility of r_A - r_B.
+    All frames have one column per market: relative (weekly relative returns), vol, signal, dollars, contracts,
+    flow. `rule_return` is the portfolio's weekly P&L in dollars.
+    """
+    markets = list(markets)
+    returns, prices, _ = matched_returns(generic, meta, markets, roll_days)
+    daily = returns.sub(returns.mean(axis=1), axis=0)
+    count = daily.notna().resample(week_end).sum()
+    relative = daily.resample(week_end).sum().where(count > 0)
+    vol = pd.DataFrame({m: weekly_vol(daily[m], vol_days, week_end) for m in markets})
+    signal = pd.DataFrame({m: reversion_signal(relative[m].cumsum(), vol[m], lookbacks, cap).mean(axis=1, skipna=False)
+                           for m in markets}).reindex(weeks)
+    gross = signal * (risk_usd / len(markets)) / (vol.reindex(weeks) * np.sqrt(52))
+    dollars = gross.sub(gross.mean(axis=1, skipna=False), axis=0)
+    contracts = dollars / (prices.resample(week_end).last().reindex(weeks) * pd.Series(POINT_VALUE)[markets])
+    weekly = returns.resample(week_end).sum().reindex(weeks)
+    return SimpleNamespace(markets=markets, relative=relative.reindex(weeks), vol=vol.reindex(weeks), signal=signal,
+                           dollars=dollars, contracts=contracts, flow=contracts.diff(), returns=weekly,
+                           rule_return=(dollars.shift(1) * weekly).sum(axis=1, min_count=len(markets)))
